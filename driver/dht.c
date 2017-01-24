@@ -3,10 +3,40 @@
 #include "c_types.h"
 #include "user_interface.h"
 #include "gpio.h"
-#include "gpio_util.h"
 #include "driver/dht.h"
+#include "gpio_util.h"
 
+static inline float scale_humidity(dht_type sensor_type, int *data)
+{
+	if(sensor_type == DHT11) {
+		return (float) data[0];
+	} else {
+		float humidity = data[0] * 256 + data[1];
+		return humidity /= 10;
+	}
+}
 
+static inline float scale_temperature(dht_type sensor_type, int *data)
+{
+	if(sensor_type == DHT11) {
+		return (float) data[2];
+	} else {
+		float temperature = data[2] & 0x7f;
+		temperature *= 256;
+		temperature += data[3];
+		temperature /= 10;
+		if (data[2] & 0x80)
+			temperature *= -1;
+		return temperature;
+	}
+}
+/*
+char* float2string(char* buffer, float value)
+{
+  os_sprintf(buffer, "%d.%d", (int)(value),(int)((value - (int)value)*100));
+  return buffer;
+}
+*/
 bool dht_read(dht_sensor *sensor, dht_data* output)
 {
 	int counter = 0;

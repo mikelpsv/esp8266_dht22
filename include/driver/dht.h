@@ -22,6 +22,7 @@ typedef struct {
 typedef struct {
   uint8_t pin;
   dht_type type;
+  uint8_t enable;
 } dht_sensor;
 
 bool dht_init(dht_sensor *sensor);
