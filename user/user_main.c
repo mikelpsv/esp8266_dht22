@@ -9,12 +9,14 @@
 #define DEBUG_MODE
 #define USER_PROC_TASK_QUEUE_LEN 1
 
-#define DHT_NUMBER_OF_SENSORS 2
+#define DHT_NUMBER_OF_SENSORS 2 // количество датчиков
 
 os_event_t user_procTaskQueue[USER_PROC_TASK_QUEUE_LEN];
 static void main_loop(os_event_t *events);
 
+// Массив датчиков
 dht_sensor dht_sensors[DHT_NUMBER_OF_SENSORS];
+
 
 // Основной цикл
 static void ICACHE_FLASH_ATTR main_loop(os_event_t *events){
