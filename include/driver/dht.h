@@ -25,7 +25,7 @@ typedef struct {
   uint8_t enable;
 } dht_sensor;
 
-bool dht_init(dht_sensor *sensor);
+void dht_init(dht_sensor *sensor);
 bool dht_read(dht_sensor *sensor, dht_data* output);
 
 #endif
