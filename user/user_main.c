@@ -20,23 +20,38 @@ static volatile os_timer_t some_timer;
 dht_sensor dht_sensors[DHT_NUMBER_OF_SENSORS];
 dht_data read_data;
 
-// Атрибут "ICACHE_FLASH_ATTR" помещает функцию во FLASH, а не оставляет в ОЗУ
 
-
-float __pow(float base, float exponent){
-	int j = 1;
-	int power = 1;
-	for(j = 0;j < exponent; j++){
-		power = power * base;
-	}
-	return power;
+inline double pow(double x,double y)
+{
+	double z , p = 1;
+	int i;
+	//y<0 ? z=-y : z=y ;
+	if(y < 0)
+    	z = fabs(y);
+ 	else
+    	z = y;
+ 	
+ 	for(i = 0; i < z ; ++i){
+    	p *= x;
+ 	}
+ 	
+ 	if(y<0)
+   		return 1/p;
+ 	else
+   		return p;
 }
 
-// Функция перевода относительной влажности при заданной температуре в абсолютную
+inline double fabs(double x)
+{
+	return( x<0 ?  -x :  x );
+}
 
+
+// Функция перевода относительной влажности при заданной температуре в абсолютную
+// Атрибут "ICACHE_FLASH_ATTR" помещает функцию во FLASH, а не оставляет в ОЗУ
 float ICACHE_FLASH_ATTR calc_abs_h(float t, float h){
 	float temp;
-	temp = __pow(2.718281828, (17.67*t) / (t+243.5));
+	temp = pow(2.718281828, (17.67*t) / (t+243.5));
 	return (6.112 * temp * h * 2.1674) / (273.15 + t);
 } 
 
