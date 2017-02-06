@@ -6,8 +6,8 @@
 #include "dht.h"
 #include "gpio_util.h"
 
-static inline float scale_humidity(dht_type sensor_type, int *data)
-{
+static inline float scale_humidity(dht_type sensor_type, int *data){
+	
 	if(sensor_type == DHT11) {
 		return (float) data[0];
 	} else {
@@ -16,8 +16,7 @@ static inline float scale_humidity(dht_type sensor_type, int *data)
 	}
 }
 
-static inline float scale_temperature(dht_type sensor_type, int *data)
-{
+static inline float scale_temperature(dht_type sensor_type, int *data){
 	if(sensor_type == DHT11) {
 		return (float) data[2];
 	} else {
@@ -30,6 +29,7 @@ static inline float scale_temperature(dht_type sensor_type, int *data)
 		return temperature;
 	}
 }
+
 /*
 char* float2string(char* buffer, float value)
 {
@@ -37,8 +37,7 @@ char* float2string(char* buffer, float value)
   return buffer;
 }
 */
-bool dht_read(dht_sensor *sensor, dht_data* output)
-{
+bool dht_read(dht_sensor *sensor){
 	char str[150];
 	int counter = 0;
 	int laststate = 1;
@@ -48,6 +47,9 @@ bool dht_read(dht_sensor *sensor, dht_data* output)
 	int data[100];
 	data[0] = data[1] = data[2] = data[3] = data[4] = 0;
 	uint8_t pin = pin_num[sensor->pin];
+
+	
+
 
     uart0_send_str("start read\r\n");
 
@@ -81,12 +83,12 @@ bool dht_read(dht_sensor *sensor, dht_data* output)
 	}
 
 	// read data
-	for (i = 0; i < DHT_MAXTIMINGS; i++)
-	{
+	for (i = 0; i < DHT_MAXTIMINGS; i++){
+
 		// Count high time (in approx us)
 		counter = 0;
-		while (GPIO_INPUT_GET(pin) == laststate)
-		{
+		while (GPIO_INPUT_GET(pin) == laststate){
+
 			//os_sprintf(str, "laststate %d\r\n", laststate);
 			//uart0_send_str(str);
 			counter++;
@@ -120,10 +122,11 @@ bool dht_read(dht_sensor *sensor, dht_data* output)
 
 		if (data[4] == checksum) {
 			// checksum is valid
-			output->temperature = scale_temperature(sensor->type, data);
-			output->humidity = scale_humidity(sensor->type, data);
+			sensor->temperature = scale_temperature(sensor->type, data);
+			sensor->humidity = scale_humidity(sensor->type, data);
+
 			os_sprintf(str, "DHT: Temperature*100 =  %d *C, Humidity*100 = %d %% (GPIO%d)\n",
-		          (int) (output->temperature * 100), (int) (output->humidity * 100), pin);
+		          (int) (sensor->temperature * 100), (int) (sensor->humidity * 100), pin);
 			uart0_send_str(str);
 		} else {
 			os_sprintf(str, "DHT: Checksum was incorrect after %d bits. Expected %d but got %d (GPIO%d)\r\n",
@@ -139,8 +142,8 @@ bool dht_read(dht_sensor *sensor, dht_data* output)
 	return true;
 }
 
-void dht_init(dht_sensor *sensor)
-{
+void dht_init(dht_sensor *sensor){
+
 	if (set_gpio_mode(sensor->pin, GPIO_OUTPUT, GPIO_PULLUP)) {
 		uart0_send_str("dht_init true\r\n");
 		sensor->enable = 1;

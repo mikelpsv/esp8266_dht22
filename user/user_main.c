@@ -24,8 +24,6 @@ MQTT_Client mqttClient;
 
 // Массив датчиков
 dht_sensor dht_sensors[DHT_NUMBER_OF_SENSORS];
-dht_data read_data;
-
 
 inline double pow(double x,double y){
 	double z , p = 1;
@@ -66,7 +64,8 @@ float ICACHE_FLASH_ATTR calc_abs_h(float t, float h){
 
 
 static void ICACHE_FLASH_ATTR read_DHT(void *arg){
-	dht_read(&dht_sensors[0], &read_data);
+	dht_read(&dht_sensors[0]);
+	dht_read(&dht_sensors[1]);
 }
 
 

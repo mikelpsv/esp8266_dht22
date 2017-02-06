@@ -12,20 +12,18 @@ typedef enum {
 	DHT22
 } dht_type;
 
-// данные датчика
-typedef struct {
-  float temperature;
-  float humidity;
-} dht_data;
 
-// датчик-тип-пин
+// датчик-тип-пин-данные
 typedef struct {
-  uint8_t pin;
-  dht_type type;
-  uint8_t enable;
+  uint8_t pin; // используемый вход
+  dht_type type; // тип датчика
+  uint8_t counter; // количество считанных данных
+  float temperature; // данные температуры
+  float humidity; // данные влажности
+  uint8_t enable; // работает или нет
 } dht_sensor;
 
 void dht_init(dht_sensor *sensor);
-bool dht_read(dht_sensor *sensor, dht_data* output);
+bool dht_read(dht_sensor *sensor);
 
 #endif
