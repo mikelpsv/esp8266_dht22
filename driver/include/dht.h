@@ -15,12 +15,12 @@ typedef enum {
 
 // датчик-тип-пин-данные
 typedef struct {
-  uint8_t pin; // используемый вход
-  dht_type type; // тип датчика
-  uint8_t counter; // количество считанных данных
+  uint8_t pin;       // используемый вход
+  dht_type type;     // тип датчика
+  uint8_t counter;   // количество считанных данных
   float temperature; // данные температуры
-  float humidity; // данные влажности
-  uint8_t enable; // работает или нет
+  float humidity;    // данные влажности
+  uint8_t enable;    // работает или нет
 } dht_sensor;
 
 void dht_init(dht_sensor *sensor);

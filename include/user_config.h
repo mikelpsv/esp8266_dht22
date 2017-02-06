@@ -3,13 +3,13 @@
 
 #define PROTOCOL_NAMEv31
 
-#define CFG_HOLDER	0x00FF55A4	/* Change this value to load default configurations */
+#define CFG_HOLDER	0x00FF55A3	/* Change this value to load default configurations */
 #define CFG_LOCATION	0x3C	/* Please don't change or if you know what you doing */
 #define CLIENT_SSL_ENABLE
 
 /*DEFAULT CONFIGURATIONS*/
 
-#define MQTT_HOST			"127.0.0.1" //or "mqtt.yourdomain.com"
+#define MQTT_HOST			"192.168.1.71" //or "mqtt.yourdomain.com"
 #define MQTT_PORT			1883
 #define MQTT_BUF_SIZE		1024
 #define MQTT_KEEPALIVE		120	 /*second*/
@@ -18,8 +18,8 @@
 #define MQTT_USER			""
 #define MQTT_PASS			""
 
-#define STA_SSID "Mikrotik"
-#define STA_PASS "14785262"
+#define STA_SSID "MGTS_GPON_1135"
+#define STA_PASS "D9CHK89V"
 #define STA_TYPE AUTH_WPA2_PSK
 
 #define MQTT_RECONNECT_TIMEOUT 	5	/*second*/

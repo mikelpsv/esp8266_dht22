@@ -42,7 +42,7 @@
 
 #define MQTT_TASK_PRIO        		0
 #define MQTT_TASK_QUEUE_SIZE    	1
-#define MQTT_SEND_TIMOUT			5
+#define MQTT_SEND_TIMOUT			25
 
 #ifndef QUEUE_BUFFER_SIZE
 #define QUEUE_BUFFER_SIZE		 	2048
