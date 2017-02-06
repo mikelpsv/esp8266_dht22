@@ -3,7 +3,7 @@
 #include "c_types.h"
 #include "user_interface.h"
 #include "gpio.h"
-#include "driver/dht.h"
+#include "dht.h"
 #include "gpio_util.h"
 
 static inline float scale_humidity(dht_type sensor_type, int *data)
