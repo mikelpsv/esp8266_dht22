@@ -58,53 +58,70 @@ float ICACHE_FLASH_ATTR calc_abs_h(float t, float h){
     return (6.112 * temp * h * 2.1674) / (273.15 + t);
 } 
 
+void ICACHE_FLASH_ATTR sendData(char* topic, float value, int qos, int retain){
+    char str[6];
+    int sz = (value < 0) ? 6 : 5;
+    os_sprintf(str, "%d", (int)(value*100));
+    MQTT_Publish(&mqttClient, topic, str, sz, 1, 1);
+}
 
 
+void ICACHE_FLASH_ATTR sprint_float(float val, char *buff) {
+    char smallBuff[16];
+    int val1 = (int) val;
+    unsigned int val2;
 
+    if (val < 0) {
+        val2 = (int) (-100.0 * val) % 100;
+    }else{
+        val2 = (int) (100.0 * val) % 100;
+    }
+   
+   if (val2 < 10) {
+      os_sprintf(smallBuff, "%i.0%u", val1, val2);
+   } else {
+      os_sprintf(smallBuff, "%i.%u", val1, val2);
+   }
+
+   strcat(buff, smallBuff);
+}
 
 
 static void ICACHE_FLASH_ATTR read_DHT(void *arg){
-  char str_sig[6];
-    char str_unsig[5];
 
-  double h_abs1, h_abs2;
+    double h_abs1, h_abs2;
 
-  dht_read(&dht_sensors[0]);
+    dht_read(&dht_sensors[0]);
     dht_read(&dht_sensors[1]);
 
+    // Отправляем температуру
+    sendData("www/qqq/sss/t1", dht_sensors[0].temperature, 0, 1);
+    sendData("www/qqq/sss/t2", dht_sensors[1].temperature, 0, 1);
+    
+    // Отправляем отностительную влажность
+    sendData("www/qqq/sss/h1", dht_sensors[0].humidity, 0, 1);
+    sendData("www/qqq/sss/h2", dht_sensors[1].humidity, 0, 1);
 
-  if(dht_sensors[0].temperature < 0){
-    os_sprintf(str_sig, "%d", (int)(dht_sensors[0].temperature*100));
-    MQTT_Publish(&mqttClient, "www/qqq/sss/t1", str_sig, sizeof(str_sig), 1, 1);
-  }else{
-    os_sprintf(str_unsig, "%d", (int)(dht_sensors[0].temperature*100));
-    MQTT_Publish(&mqttClient, "www/qqq/sss/t1", str_unsig, sizeof(str_unsig), 1, 1);
-  }
+    // Рассчитываем и отправляем абсолютную влажность
+    h_abs1 = calc_abs_h(dht_sensors[0].temperature, dht_sensors[0].humidity);
+    h_abs2 = calc_abs_h(dht_sensors[1].temperature, dht_sensors[1].humidity);
 
-  os_sprintf(str_unsig, "%d", (int)(dht_sensors[0].humidity*100));
-  MQTT_Publish(&mqttClient, "www/qqq/sss/h1", str_unsig, sizeof(str_unsig), 1, 1);
-
-  h_abs1 = calc_abs_h(dht_sensors[0].temperature, dht_sensors[0].humidity);
-  os_sprintf(str_unsig, "%d", (int)(h_abs1*100));
-  MQTT_Publish(&mqttClient, "www/qqq/sss/h11", str_unsig, sizeof(str_unsig), 1, 1);
-
-
-  if(dht_sensors[1].temperature < 0){
-    os_sprintf(str_sig, "%d", (int)(dht_sensors[1].temperature*100));
-    MQTT_Publish(&mqttClient, "www/qqq/sss/t2", str_sig, sizeof(str_sig), 1, 1);
-  }else{
-    os_sprintf(str_unsig, "%d", (int)(dht_sensors[1].temperature*100));
-    MQTT_Publish(&mqttClient, "www/qqq/sss/t2", str_unsig, sizeof(str_unsig), 1, 1);
-  }
-
-  os_sprintf(str_unsig, "%d", (int)(dht_sensors[1].humidity*100));
-  MQTT_Publish(&mqttClient, "www/qqq/sss/h2", str_unsig, sizeof(str_unsig), 1, 1);
-  
-  h_abs2 = calc_abs_h(dht_sensors[1].temperature, dht_sensors[1].humidity);
-  os_sprintf(str_unsig, "%d", (int)(h_abs2*100));
-  MQTT_Publish(&mqttClient, "www/qqq/sss/h21", str_unsig, sizeof(str_unsig), 1, 1);
+    sendData("www/qqq/sss/h11", h_abs1, 0, 1);
+    sendData("www/qqq/sss/h21", h_abs1, 0, 1);
 }
 
+void ICACHE_FLASH_ATTR motorOn(){
+    GPIO_OUTPUT_SET(4, 1);
+    // подтверждение, что вентилятор включен
+    MQTT_Publish(&mqttClient, "www/qqq/sss/v", "on", 2, 1, 1);
+}
+
+
+void ICACHE_FLASH_ATTR motorOff(){
+    GPIO_OUTPUT_SET(4, 0);   
+    // подтверждение, что вентилятор выключен
+    MQTT_Publish(&mqttClient, "www/qqq/sss/v", "off", 2, 1, 1);    
+}
 
 void ICACHE_FLASH_ATTR wifiConnectCb(uint8_t status){
     if(status == STATION_GOT_IP){
@@ -147,9 +164,10 @@ void ICACHE_FLASH_ATTR mqttDataCb(uint32_t *args, const char* topic, uint32_t to
   if(strcmp(topicBuf, "www/qqq/sss/v") == 0){
     uart0_send_str("topic ok!\r\n");
     if(strcmp(dataBuf, "on") == 0){
-      GPIO_OUTPUT_SET(4, 1);
+        motorOn();
     }
     if(strcmp(dataBuf, "off") == 0){
+        motorOff();
       GPIO_OUTPUT_SET(4, 0);
     }
   }
