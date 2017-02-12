@@ -47,7 +47,7 @@ bool dht_read(dht_sensor *sensor){
 	int data[100];
 	data[0] = data[1] = data[2] = data[3] = data[4] = 0;
 	uint8_t pin = pin_num[sensor->pin];
-
+	float _t, _h;
 	
 
 
@@ -122,8 +122,14 @@ bool dht_read(dht_sensor *sensor){
 
 		if (data[4] == checksum) {
 			// checksum is valid
-			sensor->temperature = scale_temperature(sensor->type, data);
-			sensor->humidity = scale_humidity(sensor->type, data);
+
+			_t = scale_temperature(sensor->type, data);
+			_h = scale_humidity(sensor->type, data);
+		
+			sensor->temperature = (sensor->temperature * sensor->counter + _t)/(sensor->counter + 1);
+			sensor->humidity 	= (sensor->humidity * sensor->counter + _h)/(sensor->counter + 1);
+
+			sensor->counter = sensor->counter + 1;
 
 			os_sprintf(str, "DHT: Temperature*100 =  %d *C, Humidity*100 = %d %% (GPIO%d)\n",
 		          (int) (sensor->temperature * 100), (int) (sensor->humidity * 100), pin);

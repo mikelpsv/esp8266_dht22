@@ -14,13 +14,14 @@
 
 #define DEBUG_MODE
 #define USER_PROC_TASK_QUEUE_LEN 1
-
 #define DHT_NUMBER_OF_SENSORS 2 // количество датчиков
 
 os_event_t user_procTaskQueue[USER_PROC_TASK_QUEUE_LEN];
 static volatile os_timer_t some_timer;
 
 MQTT_Client mqttClient;
+
+int _MAX_HUMIDITY;
 
 // Массив датчиков
 dht_sensor dht_sensors[DHT_NUMBER_OF_SENSORS];
@@ -59,10 +60,9 @@ float ICACHE_FLASH_ATTR calc_abs_h(float t, float h){
 } 
 
 void ICACHE_FLASH_ATTR sendData(char* topic, float value, int qos, int retain){
-    char str[6];
-    int sz = (value < 0) ? 6 : 5;
+    char str[10];
     os_sprintf(str, "%d", (int)(value*100));
-    MQTT_Publish(&mqttClient, topic, str, sz, 1, 1);
+    MQTT_Publish(&mqttClient, topic, str, sizeof(str), 1, 1);
 }
 
 
@@ -86,30 +86,6 @@ void ICACHE_FLASH_ATTR sprint_float(float val, char *buff) {
    strcat(buff, smallBuff);
 }
 
-
-static void ICACHE_FLASH_ATTR read_DHT(void *arg){
-
-    double h_abs1, h_abs2;
-
-    dht_read(&dht_sensors[0]);
-    dht_read(&dht_sensors[1]);
-
-    // Отправляем температуру
-    sendData("www/qqq/sss/t1", dht_sensors[0].temperature, 0, 1);
-    sendData("www/qqq/sss/t2", dht_sensors[1].temperature, 0, 1);
-    
-    // Отправляем отностительную влажность
-    sendData("www/qqq/sss/h1", dht_sensors[0].humidity, 0, 1);
-    sendData("www/qqq/sss/h2", dht_sensors[1].humidity, 0, 1);
-
-    // Рассчитываем и отправляем абсолютную влажность
-    h_abs1 = calc_abs_h(dht_sensors[0].temperature, dht_sensors[0].humidity);
-    h_abs2 = calc_abs_h(dht_sensors[1].temperature, dht_sensors[1].humidity);
-
-    sendData("www/qqq/sss/h11", h_abs1, 0, 1);
-    sendData("www/qqq/sss/h21", h_abs1, 0, 1);
-}
-
 void ICACHE_FLASH_ATTR motorOn(){
     GPIO_OUTPUT_SET(4, 1);
     // подтверждение, что вентилятор включен
@@ -122,6 +98,40 @@ void ICACHE_FLASH_ATTR motorOff(){
     // подтверждение, что вентилятор выключен
     MQTT_Publish(&mqttClient, "www/qqq/sss/v", "off", 2, 1, 1);    
 }
+
+static void ICACHE_FLASH_ATTR read_DHT(void *arg){
+
+    double h_abs1, h_abs2;
+
+    dht_read(&dht_sensors[0]);
+    dht_read(&dht_sensors[1]);
+    if((dht_sensors[0].counter == DHT_COUNTER) || (dht_sensors[1].counter == DHT_COUNTER)){
+        // Отправляем температуру
+        sendData("www/qqq/sss/t1", dht_sensors[0].temperature, 0, 1);
+        sendData("www/qqq/sss/t2", dht_sensors[1].temperature, 0, 1);
+    
+        // Отправляем отностительную влажность
+        sendData("www/qqq/sss/h1", dht_sensors[0].humidity, 0, 1);
+        sendData("www/qqq/sss/h2", dht_sensors[1].humidity, 0, 1);
+
+        // Рассчитываем и отправляем абсолютную влажность
+        h_abs1 = calc_abs_h(dht_sensors[0].temperature, dht_sensors[0].humidity);
+        h_abs2 = calc_abs_h(dht_sensors[1].temperature, dht_sensors[1].humidity);
+
+        sendData("www/qqq/sss/h11", h_abs1, 0, 1);
+        sendData("www/qqq/sss/h21", h_abs1, 0, 1);
+
+        dht_sensors[0].counter = 0;
+        dht_sensors[1].counter = 0;
+
+        if(dht_sensors[1].humidity > _MAX_HUMIDITY && h_abs2 < h_abs1){
+            motorOn();
+        }else{
+            motorOff();
+        }
+    }
+}
+
 
 void ICACHE_FLASH_ATTR wifiConnectCb(uint8_t status){
     if(status == STATION_GOT_IP){
@@ -162,8 +172,7 @@ void ICACHE_FLASH_ATTR mqttDataCb(uint32_t *args, const char* topic, uint32_t to
   os_sprintf(str, "Received topic: %s, data: %s [%d]\n", topicBuf, dataBuf, data_len);
   uart0_send_str(str);
   if(strcmp(topicBuf, "www/qqq/sss/v") == 0){
-    uart0_send_str("topic ok!\r\n");
-    if(strcmp(dataBuf, "on") == 0){
+     if(strcmp(dataBuf, "on") == 0){
         motorOn();
     }
     if(strcmp(dataBuf, "off") == 0){
@@ -185,15 +194,20 @@ void init_done_cb() {
     // Чтение настроек
     config_load();
 
+
+    _MAX_HUMIDITY = 90;
+
     // Внутренний датчик
     dht_sensors[0].pin = 5;
     dht_sensors[0].type = DHT22;
     dht_sensors[0].enable = 1;
+    dht_sensors[0].counter = 0;
 
     // Внешний датчик
     dht_sensors[1].pin = 6;
     dht_sensors[1].type = DHT22;
     dht_sensors[1].enable = 1;
+    dht_sensors[1].counter = 0;
 
     // Инициализация датчиков
     dht_init(&dht_sensors[0]);

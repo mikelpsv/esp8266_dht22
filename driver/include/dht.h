@@ -4,6 +4,7 @@
 #define DHT_MAXTIMINGS	10000
 #define DHT_BREAKTIME	20
 #define DHT_MAXCOUNT	32000
+#define DHT_COUNTER		5
 
 
 // тип датчика
