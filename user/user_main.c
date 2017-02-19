@@ -16,54 +16,23 @@
 #define USER_PROC_TASK_QUEUE_LEN 1
 #define DHT_NUMBER_OF_SENSORS 2 // количество датчиков
 
+#define TIMER_READ_SENSOR_MS 5000   // интервал опроса датчиков
+#define SENSOR_PIN_INDOOR 14        // пин внутреннего датчика
+#define SENSOR_PIN_OUTDOOR 12       // пин внешнего датчика
+#define MOTOR_PIN 4                 // пин вентилятора
+
+#define TOPIC "cellar/device_id/%s"
+
 os_event_t user_procTaskQueue[USER_PROC_TASK_QUEUE_LEN];
 static volatile os_timer_t some_timer;
 
 MQTT_Client mqttClient;
-
+char topic_str[20];
 int _MAX_HUMIDITY;
 
 // Массив датчиков
 dht_sensor dht_sensors[DHT_NUMBER_OF_SENSORS];
 
-inline double pow(double x,double y){
-    double z , p = 1;
-    int i;
-    //y<0 ? z=-y : z=y ;
-    if(y < 0)
-        z = fabs(y);
-    else
-        z = y;
-    
-    for(i = 0; i < z ; ++i){
-        p *= x;
-    }
-    
-    if(y<0)
-        return 1/p;
-    else
-        return p;
-}
-
-inline double fabs(double x)
-{
-    return( x<0 ?  -x :  x );
-}
-
-
-// Функция перевода относительной влажности при заданной температуре в абсолютную
-// Атрибут "ICACHE_FLASH_ATTR" помещает функцию во FLASH, а не оставляет в ОЗУ
-float ICACHE_FLASH_ATTR calc_abs_h(float t, float h){
-    float temp;
-    temp = pow(2.718281828, (17.67*t) / (t+243.5));
-    return (6.112 * temp * h * 2.1674) / (273.15 + t);
-} 
-
-void ICACHE_FLASH_ATTR sendData(char* topic, float value, int qos, int retain){
-    char str[10];
-    os_sprintf(str, "%d", (int)(value*100));
-    MQTT_Publish(&mqttClient, topic, str, sizeof(str), 1, 1);
-}
 
 
 void ICACHE_FLASH_ATTR sprint_float(float val, char *buff) {
@@ -87,44 +56,42 @@ void ICACHE_FLASH_ATTR sprint_float(float val, char *buff) {
 }
 
 void ICACHE_FLASH_ATTR motorOn(){
-    GPIO_OUTPUT_SET(4, 1);
+    GPIO_OUTPUT_SET(MOTOR_PIN, 1);
+
     // подтверждение, что вентилятор включен
-    MQTT_Publish(&mqttClient, "www/qqq/sss/v", "on", 2, 1, 1);
+    os_sprintf(topic_str, TOPIC, "motor");
+    MQTT_Publish(&mqttClient, topic_str, "on", 2, 1, 1);
 }
 
 
 void ICACHE_FLASH_ATTR motorOff(){
-    GPIO_OUTPUT_SET(4, 0);   
+    GPIO_OUTPUT_SET(MOTOR_PIN, 0);   
+
     // подтверждение, что вентилятор выключен
-    MQTT_Publish(&mqttClient, "www/qqq/sss/v", "off", 2, 1, 1);    
+    os_sprintf(topic_str, TOPIC, "motor");
+    MQTT_Publish(&mqttClient, topic_str, "off", 2, 1, 1);    
 }
 
 static void ICACHE_FLASH_ATTR read_DHT(void *arg){
-
-    double h_abs1, h_abs2;
+    char mqtt_data[50];
 
     dht_read(&dht_sensors[0]);
     dht_read(&dht_sensors[1]);
+
     if((dht_sensors[0].counter == DHT_COUNTER) || (dht_sensors[1].counter == DHT_COUNTER)){
-        // Отправляем температуру
-        sendData("www/qqq/sss/t1", dht_sensors[0].temperature, 0, 1);
-        sendData("www/qqq/sss/t2", dht_sensors[1].temperature, 0, 1);
-    
-        // Отправляем отностительную влажность
-        sendData("www/qqq/sss/h1", dht_sensors[0].humidity, 0, 1);
-        sendData("www/qqq/sss/h2", dht_sensors[1].humidity, 0, 1);
 
-        // Рассчитываем и отправляем абсолютную влажность
-        h_abs1 = calc_abs_h(dht_sensors[0].temperature, dht_sensors[0].humidity);
-        h_abs2 = calc_abs_h(dht_sensors[1].temperature, dht_sensors[1].humidity);
+        dataToJSON(&dht_sensors[0], mqtt_data);
+        os_sprintf(topic_str, TOPIC, "sensor0");
+        MQTT_Publish(&mqttClient, topic_str, mqtt_data, 2, 0, 1);
 
-        sendData("www/qqq/sss/h11", h_abs1, 0, 1);
-        sendData("www/qqq/sss/h21", h_abs1, 0, 1);
-
+        dataToJSON(&dht_sensors[1], mqtt_data);
+        os_sprintf(topic_str, TOPIC, "sensor1");
+        MQTT_Publish(&mqttClient, topic_str, mqtt_data, 2, 0, 1);
+        
         dht_sensors[0].counter = 0;
         dht_sensors[1].counter = 0;
 
-        if(dht_sensors[1].humidity > _MAX_HUMIDITY && h_abs2 < h_abs1){
+        if(dht_sensors[1].humidity > _MAX_HUMIDITY && dht_sensors[1].humidity_a < dht_sensors[0].humidity_a){
             motorOn();
         }else{
             motorOff();
@@ -143,45 +110,44 @@ void ICACHE_FLASH_ATTR wifiConnectCb(uint8_t status){
 
 void ICACHE_FLASH_ATTR mqttConnectedCb(uint32_t *args) {
   
-  MQTT_Client* client = (MQTT_Client*) args;
-  char clientid[20] = "TODO!";
-  MQTT_Subscribe(client, "#", 0);
+    MQTT_Client* client = (MQTT_Client*) args;
+    char clientid[20] = "TODO!";
+    MQTT_Subscribe(client, "#", 0);
 }
 
 
 void mqttDisconnectedCb(uint32_t *args) {
   
-  MQTT_Client* client = (MQTT_Client*)args;
-  uart0_send_str("MQTT: Disconnected\r\n");
+    MQTT_Client* client = (MQTT_Client*)args;
+    uart0_send_str("MQTT: Disconnected\r\n");
 
 }
 
 void ICACHE_FLASH_ATTR mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const char *data, uint32_t data_len) {
 
-  char *topicBuf = (char*) os_zalloc(topic_len + 1), *dataBuf = (char*) os_zalloc(data_len + 1);
-  char str[100];
+    char *topicBuf = (char*) os_zalloc(topic_len + 1), *dataBuf = (char*) os_zalloc(data_len + 1);
+    char str[100];
   
-  MQTT_Client* client = (MQTT_Client*) args;
-  os_memcpy(topicBuf, topic, topic_len);
-  topicBuf[topic_len] = 0;
-  char *sp = topicBuf; // string pointer accessing internals of topicBuf
+    MQTT_Client* client = (MQTT_Client*) args;
+    os_memcpy(topicBuf, topic, topic_len);
+    topicBuf[topic_len] = 0;
+    char *sp = topicBuf; // string pointer accessing internals of topicBuf
 
-  os_memcpy(dataBuf, data, data_len);
-  dataBuf[data_len] = 0;
+    os_memcpy(dataBuf, data, data_len);
+    dataBuf[data_len] = 0;
 
-  os_sprintf(str, "Received topic: %s, data: %s [%d]\n", topicBuf, dataBuf, data_len);
-  uart0_send_str(str);
-  if(strcmp(topicBuf, "www/qqq/sss/v") == 0){
-     if(strcmp(dataBuf, "on") == 0){
-        motorOn();
+    os_sprintf(str, "Received topic: %s, data: %s [%d]\r\n", topicBuf, dataBuf, data_len);
+    uart0_send_str(str);
+    if(strcmp(topicBuf, "www/qqq/sss/v") == 0){
+        if(strcmp(dataBuf, "on") == 0){
+            motorOn();
+        }
+        if(strcmp(dataBuf, "off") == 0){
+            motorOff();
+        }
     }
-    if(strcmp(dataBuf, "off") == 0){
-        motorOff();
-      GPIO_OUTPUT_SET(4, 0);
-    }
-  }
-  os_free(topicBuf);
-  os_free(dataBuf);
+    os_free(topicBuf);
+    os_free(dataBuf);
 }
 
 void init_done_cb() {
@@ -189,8 +155,8 @@ void init_done_cb() {
     //Initialize GPIO
     gpio_init();
   
-    set_gpio_mode(2, GPIO_OUTPUT, GPIO_PULLUP);
-    GPIO_OUTPUT_SET(2, 0);
+    set_gpio_mode(MOTOR_PIN, GPIO_OUTPUT, GPIO_PULLUP);
+    GPIO_OUTPUT_SET(MOTOR_PIN, 0);
     // Чтение настроек
     config_load();
 
@@ -198,13 +164,13 @@ void init_done_cb() {
     _MAX_HUMIDITY = 90;
 
     // Внутренний датчик
-    dht_sensors[0].pin = 5;
+    dht_sensors[0].pin = SENSOR_PIN_INDOOR;
     dht_sensors[0].type = DHT22;
     dht_sensors[0].enable = 1;
     dht_sensors[0].counter = 0;
 
     // Внешний датчик
-    dht_sensors[1].pin = 6;
+    dht_sensors[1].pin = SENSOR_PIN_OUTDOOR;
     dht_sensors[1].type = DHT22;
     dht_sensors[1].enable = 1;
     dht_sensors[1].counter = 0;
@@ -229,8 +195,9 @@ void init_done_cb() {
 
     os_timer_disarm(&some_timer);
     os_timer_setfn(&some_timer, (os_timer_func_t *)read_DHT, NULL);
-    //in ms, 0 for once and 1 for repeating
-    os_timer_arm(&some_timer, 4000, 1);
+    
+    // запустим таймер опроса датчиков
+    os_timer_arm(&some_timer, TIMER_READ_SENSOR_MS, 1);
 }
 
 

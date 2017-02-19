@@ -6,6 +6,42 @@
 #include "dht.h"
 #include "gpio_util.h"
 
+
+
+
+
+inline double fabs(double x){
+    return( x<0 ?  -x :  x );
+}
+
+inline double pow(double x,double y){
+    double z , p = 1;
+    int i;
+    //y<0 ? z=-y : z=y ;
+    if(y < 0)
+        z = fabs(y);
+    else
+        z = y;
+    
+    for(i = 0; i < z ; ++i){
+        p *= x;
+    }
+    
+    if(y<0)
+        return 1/p;
+    else
+        return p;
+}
+
+// Функция перевода относительной влажности при заданной температуре в абсолютную
+// Атрибут "ICACHE_FLASH_ATTR" помещает функцию во FLASH, а не оставляет в ОЗУ
+float ICACHE_FLASH_ATTR calc_abs_h(float t, float h){
+    float temp;
+    temp = pow(2.718281828, (17.67*t) / (t+243.5));
+    return (6.112 * temp * h * 2.1674) / (273.15 + t);
+} 
+
+
 static inline float scale_humidity(dht_type sensor_type, int *data){
 	
 	if(sensor_type == DHT11) {
@@ -30,13 +66,18 @@ static inline float scale_temperature(dht_type sensor_type, int *data){
 	}
 }
 
-/*
-char* float2string(char* buffer, float value)
-{
-  os_sprintf(buffer, "%d.%d", (int)(value),(int)((value - (int)value)*100));
-  return buffer;
+// данные датчика переводит в json
+void dataToJSON(dht_sensor *sensor, char* buffer){
+	os_sprintf(buffer, "{'t':%d, 'h':%d, 'habs':%d, 'cnt':%d}", 
+				sensor->temperature * 100, 
+				sensor->humidity * 100,
+				sensor->humidity_a * 100,
+				sensor->counter
+				);
+	return;
 }
-*/
+
+// опрос датчика
 bool dht_read(dht_sensor *sensor){
 	char str[150];
 	int counter = 0;
@@ -123,15 +164,18 @@ bool dht_read(dht_sensor *sensor){
 		if (data[4] == checksum) {
 			// checksum is valid
 
+			// текущие значения датчика
 			_t = scale_temperature(sensor->type, data);
 			_h = scale_humidity(sensor->type, data);
 		
+			// усредняем
 			sensor->temperature = (sensor->temperature * sensor->counter + _t)/(sensor->counter + 1);
 			sensor->humidity 	= (sensor->humidity * sensor->counter + _h)/(sensor->counter + 1);
+			sensor->humidity_a 	= calc_abs_h(sensor->temperature, sensor->humidity);
 
 			sensor->counter = sensor->counter + 1;
 
-			os_sprintf(str, "DHT: Temperature*100 =  %d *C, Humidity*100 = %d %% (GPIO%d)\n",
+			os_sprintf(str, "DHT: Temperature*100 =  %d *C, Humidity*100 = %d %% (GPIO%d)\r\n",
 		          (int) (sensor->temperature * 100), (int) (sensor->humidity * 100), pin);
 			uart0_send_str(str);
 		} else {
