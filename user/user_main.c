@@ -10,15 +10,15 @@
 #include "uart.h"
 #include "config.h"
 #include "dht.h"
-#include "gpio_util.h"
+#include "ugpio.h"
 
 #define DEBUG_MODE
 #define USER_PROC_TASK_QUEUE_LEN 1
 #define DHT_NUMBER_OF_SENSORS 2 // количество датчиков
 
 #define TIMER_READ_SENSOR_MS 5000   // интервал опроса датчиков
-#define SENSOR_PIN_INDOOR 14        // пин внутреннего датчика
-#define SENSOR_PIN_OUTDOOR 12       // пин внешнего датчика
+#define SENSOR_PIN_INDOOR 12        // пин внутреннего датчика
+#define SENSOR_PIN_OUTDOOR 14       // пин внешнего датчика
 #define MOTOR_PIN 4                 // пин вентилятора
 
 #define TOPIC "cellar/device_id/%s"
@@ -69,7 +69,7 @@ void ICACHE_FLASH_ATTR motorOff(){
 
     // подтверждение, что вентилятор выключен
     os_sprintf(topic_str, TOPIC, "motor");
-    MQTT_Publish(&mqttClient, topic_str, "off", 2, 1, 1);    
+    MQTT_Publish(&mqttClient, topic_str, "off", 3, 1, 1);    
 }
 
 static void ICACHE_FLASH_ATTR read_DHT(void *arg){
@@ -80,14 +80,18 @@ static void ICACHE_FLASH_ATTR read_DHT(void *arg){
 
     if((dht_sensors[0].counter == DHT_COUNTER) || (dht_sensors[1].counter == DHT_COUNTER)){
 
-        dataToJSON(&dht_sensors[0], mqtt_data);
-        os_sprintf(topic_str, TOPIC, "sensor0");
-        MQTT_Publish(&mqttClient, topic_str, mqtt_data, 2, 0, 1);
+        int len;
 
-        dataToJSON(&dht_sensors[1], mqtt_data);
-        os_sprintf(topic_str, TOPIC, "sensor1");
-        MQTT_Publish(&mqttClient, topic_str, mqtt_data, 2, 0, 1);
+        len = dataToJSON(&dht_sensors[0], mqtt_data);
+        os_sprintf(topic_str, TOPIC, "sensor0");
+        MQTT_Publish(&mqttClient, topic_str, mqtt_data, len, 0, 1);
         
+
+        len = dataToJSON(&dht_sensors[1], mqtt_data);
+        os_sprintf(topic_str, TOPIC, "sensor1");
+        MQTT_Publish(&mqttClient, topic_str, mqtt_data, len, 0, 1);
+        
+
         dht_sensors[0].counter = 0;
         dht_sensors[1].counter = 0;
 
@@ -197,6 +201,7 @@ void init_done_cb() {
     os_timer_setfn(&some_timer, (os_timer_func_t *)read_DHT, NULL);
     
     // запустим таймер опроса датчиков
+    
     os_timer_arm(&some_timer, TIMER_READ_SENSOR_MS, 1);
 }
 

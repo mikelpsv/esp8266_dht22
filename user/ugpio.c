@@ -37,7 +37,8 @@
 
 #include "ets_sys.h"
 #include "osapi.h"
-#include "driver/gpio16.h"
+#include "gpio.h"
+#include "ugpio.h"
 
 
 #ifdef GPIO_INTERRUPT_ENABLE
@@ -57,7 +58,7 @@ uint8_t ICACHE_FLASH_ATTR is_valid_pin(uint8_t pin_num){
 		case 11: return 0; break;
 		default:
 			if(pin_num > GPIO_PIN_NUM) 
-				return 0
+				return 0;
 			else
 				return 1;
 			break;
@@ -144,6 +145,10 @@ uint8 ICACHE_FLASH_ATTR gpio16_input_get(void){
 
 
 int ICACHE_FLASH_ATTR set_gpio_mode(unsigned pin, unsigned mode, unsigned pull){
+	char str[50];
+	os_sprintf(str, "set_gpio_mode %d", pin);
+	uart0_send_str(str);
+
 	if (!is_valid_pin(pin)) return 0;
 
 	if(pin == 16) {
@@ -153,6 +158,7 @@ int ICACHE_FLASH_ATTR set_gpio_mode(unsigned pin, unsigned mode, unsigned pull){
 			gpio16_output_conf();
 		return 1;
 	}
+	
 
 	switch(pull) {
 		case GPIO_PULLUP:

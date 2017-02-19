@@ -4,7 +4,7 @@
 #include "user_interface.h"
 #include "gpio.h"
 #include "dht.h"
-#include "gpio_util.h"
+#include "ugpio.h"
 
 
 
@@ -67,14 +67,14 @@ static inline float scale_temperature(dht_type sensor_type, int *data){
 }
 
 // данные датчика переводит в json
-void dataToJSON(dht_sensor *sensor, char* buffer){
-	os_sprintf(buffer, "{'t':%d, 'h':%d, 'habs':%d, 'cnt':%d}", 
-				sensor->temperature * 100, 
-				sensor->humidity * 100,
-				sensor->humidity_a * 100,
+int dataToJSON(dht_sensor *sensor, char* buffer){
+
+	return os_sprintf(buffer, "{t:%d, h:%d, habs:%d, cnt:%d}\0", 
+				(int)(sensor->temperature * 100), 
+				(int)(sensor->humidity * 100),
+				(int)(sensor->humidity_a * 100),
 				sensor->counter
 				);
-	return;
 }
 
 // опрос датчика
@@ -87,7 +87,7 @@ bool dht_read(dht_sensor *sensor){
 	int checksum = 0;
 	int data[100];
 	data[0] = data[1] = data[2] = data[3] = data[4] = 0;
-	uint8_t pin = pin_num[sensor->pin];
+	uint8_t pin = sensor->pin;
 	float _t, _h;
 	
 
