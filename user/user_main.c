@@ -141,7 +141,6 @@ void ICACHE_FLASH_ATTR wifiConnectCb(uint8_t status){
 void ICACHE_FLASH_ATTR mqttConnectedCb(uint32_t *args) {
   
     MQTT_Client* client = (MQTT_Client*) args;
-    char clientid[20] = "TODO!";
     MQTT_Subscribe(client, "#", 0);
 }
 
