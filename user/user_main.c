@@ -28,7 +28,7 @@
 #define SENSOR_INDEX_INDOOR  0        // индекс контрольного датчика в погребе
 #define SENSOR_INDEX_OUTDOOR 1        // индекс внешнего датчика
 
-#define TOPIC "cellar/device_id/%s"
+#define TOPIC "cellar/device_id/%d"
 
 
 os_event_t user_procTaskQueue[USER_PROC_TASK_QUEUE_LEN];
@@ -42,6 +42,7 @@ int _MAX_HUMIDITY;      // влажность, при которой включ�
 int _DELTA_HAMIDITY;    // гистерезис для отключения вентилятора: _MAX_HUMIDITY - _DELTA_HAMIDITY
 
 int motorIsOn;
+uint32_t motorHours; // счетчик мото-часов
 
 // Массив датчиков
 dht_sensor dht_sensors[DHT_NUMBER_OF_SENSORS];
@@ -73,7 +74,7 @@ void ICACHE_FLASH_ATTR motorOn(){
     motorIsOn = 1;
 
     // подтверждение, что вентилятор включен
-    os_sprintf(topic_str, TOPIC, "motor");
+    os_sprintf(topic_str, TOPIC, MOTOR_PIN);
     MQTT_Publish(&mqttClient, topic_str, "on", 2, 1, 1);
 }
 
@@ -83,27 +84,32 @@ void ICACHE_FLASH_ATTR motorOff(){
     motorIsOn = 0;
 
     // подтверждение, что вентилятор выключен
-    os_sprintf(topic_str, TOPIC, "motor");
+    os_sprintf(topic_str, TOPIC, MOTOR_PIN);
     MQTT_Publish(&mqttClient, topic_str, "off", 3, 1, 1);    
 }
 
 static void ICACHE_FLASH_ATTR read_DHT(void *arg){
     char mqtt_data[50];
 
+    if(motorIsOn == 1){
+        motorHours++;
+    }
+
     dht_read(&dht_sensors[SENSOR_INDEX_INDOOR]);
     dht_read(&dht_sensors[SENSOR_INDEX_OUTDOOR]);
 
+    // Если хоть один сенсор досчитал, значит пора отправлять данные
     if((dht_sensors[SENSOR_INDEX_INDOOR].counter == DHT_COUNTER) || (dht_sensors[SENSOR_INDEX_OUTDOOR].counter == DHT_COUNTER)){
 
         int len;
 
         len = dataToJSON(&dht_sensors[SENSOR_INDEX_INDOOR], mqtt_data);
-        os_sprintf(topic_str, TOPIC, "sensor0");
+        os_sprintf(topic_str, TOPIC, &dht_sensors[SENSOR_INDEX_INDOOR].pin);
         MQTT_Publish(&mqttClient, topic_str, mqtt_data, len, 0, 1);
         
 
         len = dataToJSON(&dht_sensors[SENSOR_INDEX_OUTDOOR], mqtt_data);
-        os_sprintf(topic_str, TOPIC, "sensor1");
+        os_sprintf(topic_str, TOPIC, &dht_sensors[SENSOR_INDEX_INDOOR].pin);
         MQTT_Publish(&mqttClient, topic_str, mqtt_data, len, 0, 1);
         
 
@@ -231,7 +237,6 @@ void init_done_cb() {
     os_timer_setfn(&some_timer, (os_timer_func_t *)read_DHT, NULL);
     
     // запустим таймер опроса датчиков
-    
     os_timer_arm(&some_timer, TIMER_READ_SENSOR_MS, 1);
 }
 

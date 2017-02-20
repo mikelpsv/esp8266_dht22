@@ -69,7 +69,7 @@ static inline float scale_temperature(dht_type sensor_type, int *data){
 // данные датчика переводит в json
 int dataToJSON(dht_sensor *sensor, char* buffer){
 
-	return os_sprintf(buffer, "{t:%d, h:%d, habs:%d, cnt:%d}\0", 
+	return os_sprintf(buffer, "{\"t\":%d, \"h\":%d, \"habs\":%d, \"cnt\":%d}\0", 
 				(int)(sensor->temperature * 100), 
 				(int)(sensor->humidity * 100),
 				(int)(sensor->humidity_a * 100),
