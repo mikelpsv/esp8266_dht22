@@ -68,7 +68,7 @@ void ICACHE_FLASH_ATTR config_save(){
 
 void ICACHE_FLASH_ATTR config_load(){
 
-	uart0_send_str("\r\nload ...\r\n");
+	uart0_send_str("\r\nconfig_load ...\r\n");
 	spi_flash_read((CFG_LOCATION + 3) * SPI_FLASH_SEC_SIZE,
 				   (uint32 *)&save_flag, sizeof(SAVE_FLAG));
 	if (save_flag.flag == 0) {
@@ -98,7 +98,7 @@ void ICACHE_FLASH_ATTR config_load(){
 
 		config.mqtt_keepalive = MQTT_KEEPALIVE;
 
-		uart0_send_str("Default configuration\r\n");
+		uart0_send_str("load default configuration\r\n");
 
 		config_save();
 	}

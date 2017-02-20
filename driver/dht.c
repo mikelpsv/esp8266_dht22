@@ -175,7 +175,7 @@ bool dht_read(dht_sensor *sensor){
 
 			sensor->counter = sensor->counter + 1;
 
-			os_sprintf(str, "DHT: Temperature*100 =  %d *C, Humidity*100 = %d %% (GPIO%d)\r\n",
+			os_sprintf(str, "DHT: Avg Temperature*100 =  %d *C, Avg Humidity*100 = %d %% (GPIO%d)\r\n",
 		          (int) (sensor->temperature * 100), (int) (sensor->humidity * 100), pin);
 			uart0_send_str(str);
 		} else {

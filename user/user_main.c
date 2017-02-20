@@ -14,21 +14,34 @@
 
 #define DEBUG_MODE
 #define USER_PROC_TASK_QUEUE_LEN 1
-#define DHT_NUMBER_OF_SENSORS 2 // количество датчиков
+#define DHT_NUMBER_OF_SENSORS 2       // количество датчиков
 
-#define TIMER_READ_SENSOR_MS 5000   // интервал опроса датчиков
-#define SENSOR_PIN_INDOOR 12        // пин внутреннего датчика
-#define SENSOR_PIN_OUTDOOR 14       // пин внешнего датчика
-#define MOTOR_PIN 4                 // пин вентилятора
+#define TIMER_READ_SENSOR_MS 5000     // интервал опроса датчиков
+#define DHT_COUNTER          5        // итераций чтения данных для усреднения и отправки на сервер
+
+// SENSOR_PIN_IN, SENSOR_PIN_OUT - пины по физическому размещению датчиков
+#define SENSOR_PIN_IN  14             // пин внутреннего датчика
+#define SENSOR_PIN_OUT 12             // пин внешнего датчика
+#define MOTOR_PIN 4                   // пин вентилятора
+
+// SENSOR_INDEX_INDOOR, SENSOR_INDEX_OUTDOOR - индексы массива датчиков по функциональному использованию
+#define SENSOR_INDEX_INDOOR  0        // индекс контрольного датчика в погребе
+#define SENSOR_INDEX_OUTDOOR 1        // индекс внешнего датчика
 
 #define TOPIC "cellar/device_id/%s"
+
 
 os_event_t user_procTaskQueue[USER_PROC_TASK_QUEUE_LEN];
 static volatile os_timer_t some_timer;
 
 MQTT_Client mqttClient;
 char topic_str[20];
-int _MAX_HUMIDITY;
+
+
+int _MAX_HUMIDITY;      // влажность, при которой включится вентилятор
+int _DELTA_HAMIDITY;    // гистерезис для отключения вентилятора: _MAX_HUMIDITY - _DELTA_HAMIDITY
+
+int motorIsOn;
 
 // Массив датчиков
 dht_sensor dht_sensors[DHT_NUMBER_OF_SENSORS];
@@ -57,6 +70,7 @@ void ICACHE_FLASH_ATTR sprint_float(float val, char *buff) {
 
 void ICACHE_FLASH_ATTR motorOn(){
     GPIO_OUTPUT_SET(MOTOR_PIN, 1);
+    motorIsOn = 1;
 
     // подтверждение, что вентилятор включен
     os_sprintf(topic_str, TOPIC, "motor");
@@ -66,6 +80,7 @@ void ICACHE_FLASH_ATTR motorOn(){
 
 void ICACHE_FLASH_ATTR motorOff(){
     GPIO_OUTPUT_SET(MOTOR_PIN, 0);   
+    motorIsOn = 0;
 
     // подтверждение, что вентилятор выключен
     os_sprintf(topic_str, TOPIC, "motor");
@@ -75,29 +90,34 @@ void ICACHE_FLASH_ATTR motorOff(){
 static void ICACHE_FLASH_ATTR read_DHT(void *arg){
     char mqtt_data[50];
 
-    dht_read(&dht_sensors[0]);
-    dht_read(&dht_sensors[1]);
+    dht_read(&dht_sensors[SENSOR_INDEX_INDOOR]);
+    dht_read(&dht_sensors[SENSOR_INDEX_OUTDOOR]);
 
-    if((dht_sensors[0].counter == DHT_COUNTER) || (dht_sensors[1].counter == DHT_COUNTER)){
+    if((dht_sensors[SENSOR_INDEX_INDOOR].counter == DHT_COUNTER) || (dht_sensors[SENSOR_INDEX_OUTDOOR].counter == DHT_COUNTER)){
 
         int len;
 
-        len = dataToJSON(&dht_sensors[0], mqtt_data);
+        len = dataToJSON(&dht_sensors[SENSOR_INDEX_INDOOR], mqtt_data);
         os_sprintf(topic_str, TOPIC, "sensor0");
         MQTT_Publish(&mqttClient, topic_str, mqtt_data, len, 0, 1);
         
 
-        len = dataToJSON(&dht_sensors[1], mqtt_data);
+        len = dataToJSON(&dht_sensors[SENSOR_INDEX_OUTDOOR], mqtt_data);
         os_sprintf(topic_str, TOPIC, "sensor1");
         MQTT_Publish(&mqttClient, topic_str, mqtt_data, len, 0, 1);
         
 
-        dht_sensors[0].counter = 0;
-        dht_sensors[1].counter = 0;
+        dht_sensors[SENSOR_INDEX_INDOOR].counter = 0;
+        dht_sensors[SENSOR_INDEX_OUTDOOR].counter = 0;
 
-        if(dht_sensors[1].humidity > _MAX_HUMIDITY && dht_sensors[1].humidity_a < dht_sensors[0].humidity_a){
+        // Включаем, при условии: вентилятор выключен, влажность внутри выше нормы и внешняя абсолютная влажность меньше чем внутри
+        if(motorOn == 0 && dht_sensors[SENSOR_INDEX_INDOOR].humidity > _MAX_HUMIDITY 
+                && dht_sensors[SENSOR_INDEX_OUTDOOR].humidity_a <= dht_sensors[SENSOR_INDEX_INDOOR].humidity_a){
             motorOn();
-        }else{
+        }
+
+        // Выключаем, при условии: вентилятор включен, влажность опустилась ниже (нормы -гистерезис %)
+        if(motorIsOn == 1  && dht_sensors[SENSOR_INDEX_INDOOR].humidity <= (_MAX_HUMIDITY - _DELTA_HAMIDITY)){
             motorOff();
         }
     }
@@ -161,27 +181,37 @@ void init_done_cb() {
   
     set_gpio_mode(MOTOR_PIN, GPIO_OUTPUT, GPIO_PULLUP);
     GPIO_OUTPUT_SET(MOTOR_PIN, 0);
+    motorIsOn = 0;
+
     // Чтение настроек
     config_load();
 
 
-    _MAX_HUMIDITY = 90;
+    _MAX_HUMIDITY   = 90; // включение вентилятора при 90%
+    _DELTA_HAMIDITY = 2;  // отключение вентилятора при 88% (90-2)
 
-    // Внутренний датчик
-    dht_sensors[0].pin = SENSOR_PIN_INDOOR;
-    dht_sensors[0].type = DHT22;
-    dht_sensors[0].enable = 1;
-    dht_sensors[0].counter = 0;
+    // Планировалось, что устройство будет внутри, но из-за плохой связи роли датчиков изменились
 
-    // Внешний датчик
-    dht_sensors[1].pin = SENSOR_PIN_OUTDOOR;
-    dht_sensors[1].type = DHT22;
-    dht_sensors[1].enable = 1;
-    dht_sensors[1].counter = 0;
+    // SENSOR_PIN_IN, SENSOR_PIN_OUT - пины по физическому размещению датчиков
+    // SENSOR_INDEX_INDOOR, SENSOR_INDEX_OUTDOOR - индексы массива датчиков по функциональному использованию
+
+    // Внутренний датчик: SENSOR_PIN_IN,
+    // использование датчика для определения внешней влажности
+    dht_sensors[SENSOR_INDEX_OUTDOOR].pin = SENSOR_PIN_IN;
+    dht_sensors[SENSOR_INDEX_OUTDOOR].type = DHT22;
+    dht_sensors[SENSOR_INDEX_OUTDOOR].enable = 1;
+    dht_sensors[SENSOR_INDEX_OUTDOOR].counter = 0;
+
+    // Внешний датчик SENSOR_PIN_OUT,
+    // использование датчика: для определения влажности в погребе
+    dht_sensors[SENSOR_INDEX_INDOOR].pin = SENSOR_PIN_OUT;
+    dht_sensors[SENSOR_INDEX_INDOOR].type = DHT22;
+    dht_sensors[SENSOR_INDEX_INDOOR].enable = 1;
+    dht_sensors[SENSOR_INDEX_INDOOR].counter = 0;
 
     // Инициализация датчиков
-    dht_init(&dht_sensors[0]);
-    dht_init(&dht_sensors[1]);
+    dht_init(&dht_sensors[SENSOR_INDEX_INDOOR]);
+    dht_init(&dht_sensors[SENSOR_INDEX_OUTDOOR]);
 
 
     MQTT_InitConnection(&mqttClient, config.mqtt_host, config.mqtt_port, config.security);
