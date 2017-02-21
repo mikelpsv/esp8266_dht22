@@ -28,8 +28,10 @@
 #define SENSOR_INDEX_INDOOR  0        // индекс контрольного датчика в погребе
 #define SENSOR_INDEX_OUTDOOR 1        // индекс внешнего датчика
 
-#define TOPIC "cellar/device_id/%d"
-
+#define DATA_TOPIC "cellar/device_id/%d"
+#define SET_MAX_HUM_TOPIC "cellar/device_id/max_hum"
+#define SET_DELTA_HUM_TOPIC "cellar/device_id/delta_hum"
+#define SET_MOTOR_ON_TOPIC "cellar/device_id/motor_on"
 
 os_event_t user_procTaskQueue[USER_PROC_TASK_QUEUE_LEN];
 static volatile os_timer_t some_timer;
@@ -40,9 +42,10 @@ char topic_str[20];
 
 int _MAX_HUMIDITY;      // влажность, при которой включится вентилятор
 int _DELTA_HAMIDITY;    // гистерезис для отключения вентилятора: _MAX_HUMIDITY - _DELTA_HAMIDITY
+int _MOTOR_ON;          // принудительное включение вентилятора
 
-int motorIsOn;
-uint32_t motorHours; // счетчик мото-часов
+int motorIsOn;          // текущее состояние вентилятора
+uint32_t motorHours;    // счетчик мото-часов вентилятора
 
 // Массив датчиков
 dht_sensor dht_sensors[DHT_NUMBER_OF_SENSORS];
@@ -74,7 +77,7 @@ void ICACHE_FLASH_ATTR motorOn(){
     motorIsOn = 1;
 
     // подтверждение, что вентилятор включен
-    os_sprintf(topic_str, TOPIC, MOTOR_PIN);
+    os_sprintf(topic_str, DATA_TOPIC, MOTOR_PIN);
     MQTT_Publish(&mqttClient, topic_str, "on", 2, 1, 1);
 }
 
@@ -84,7 +87,7 @@ void ICACHE_FLASH_ATTR motorOff(){
     motorIsOn = 0;
 
     // подтверждение, что вентилятор выключен
-    os_sprintf(topic_str, TOPIC, MOTOR_PIN);
+    os_sprintf(topic_str, DATA_TOPIC, MOTOR_PIN);
     MQTT_Publish(&mqttClient, topic_str, "off", 3, 1, 1);    
 }
 
@@ -104,27 +107,34 @@ static void ICACHE_FLASH_ATTR read_DHT(void *arg){
         int len;
 
         len = dataToJSON(&dht_sensors[SENSOR_INDEX_INDOOR], mqtt_data);
-        os_sprintf(topic_str, TOPIC, &dht_sensors[SENSOR_INDEX_INDOOR].pin);
+        os_sprintf(topic_str, DATA_TOPIC, &dht_sensors[SENSOR_INDEX_INDOOR].pin);
         MQTT_Publish(&mqttClient, topic_str, mqtt_data, len, 0, 1);
         
 
         len = dataToJSON(&dht_sensors[SENSOR_INDEX_OUTDOOR], mqtt_data);
-        os_sprintf(topic_str, TOPIC, &dht_sensors[SENSOR_INDEX_INDOOR].pin);
+        os_sprintf(topic_str, DATA_TOPIC, &dht_sensors[SENSOR_INDEX_INDOOR].pin);
         MQTT_Publish(&mqttClient, topic_str, mqtt_data, len, 0, 1);
         
 
         dht_sensors[SENSOR_INDEX_INDOOR].counter = 0;
         dht_sensors[SENSOR_INDEX_OUTDOOR].counter = 0;
 
-        // Включаем, при условии: вентилятор выключен, влажность внутри выше нормы и внешняя абсолютная влажность меньше чем внутри
-        if(motorOn == 0 && dht_sensors[SENSOR_INDEX_INDOOR].humidity > _MAX_HUMIDITY 
-                && dht_sensors[SENSOR_INDEX_OUTDOOR].humidity_a <= dht_sensors[SENSOR_INDEX_INDOOR].humidity_a){
-            motorOn();
-        }
+        if(_MOTOR_ON == 0) {
+            // Включаем, при условии: вентилятор выключен, влажность внутри выше нормы и внешняя абсолютная влажность меньше чем внутри
+            if(motorOn == 0 && dht_sensors[SENSOR_INDEX_INDOOR].humidity > _MAX_HUMIDITY 
+                    && dht_sensors[SENSOR_INDEX_OUTDOOR].humidity_a <= dht_sensors[SENSOR_INDEX_INDOOR].humidity_a){
+                motorOn();
+            }
 
-        // Выключаем, при условии: вентилятор включен, влажность опустилась ниже (нормы -гистерезис %)
-        if(motorIsOn == 1  && dht_sensors[SENSOR_INDEX_INDOOR].humidity <= (_MAX_HUMIDITY - _DELTA_HAMIDITY)){
-            motorOff();
+            // Выключаем, при условии: вентилятор включен, влажность опустилась ниже (нормы -гистерезис %)
+            if(motorIsOn == 1  && dht_sensors[SENSOR_INDEX_INDOOR].humidity <= (_MAX_HUMIDITY - _DELTA_HAMIDITY)){
+                motorOff();
+            }
+        }else{
+            // уже должен быть включен - на всякий случай
+            if(motorOn == 0){
+                motorOn();
+            }
         }
     }
 }
@@ -156,6 +166,7 @@ void ICACHE_FLASH_ATTR mqttDataCb(uint32_t *args, const char* topic, uint32_t to
 
     char *topicBuf = (char*) os_zalloc(topic_len + 1), *dataBuf = (char*) os_zalloc(data_len + 1);
     char str[100];
+    int tempValue = 0;
   
     MQTT_Client* client = (MQTT_Client*) args;
     os_memcpy(topicBuf, topic, topic_len);
@@ -167,14 +178,45 @@ void ICACHE_FLASH_ATTR mqttDataCb(uint32_t *args, const char* topic, uint32_t to
 
     os_sprintf(str, "Received topic: %s, data: %s [%d]\r\n", topicBuf, dataBuf, data_len);
     uart0_send_str(str);
-    if(strcmp(topicBuf, "www/qqq/sss/v") == 0){
-        if(strcmp(dataBuf, "on") == 0){
-            motorOn();
-        }
-        if(strcmp(dataBuf, "off") == 0){
-            motorOff();
+
+    // Команда на установку порога влажности
+    if(strcmp(topicBuf, SET_MAX_HUM_TOPIC) == 0){
+        tempValue = atoi(dataBuf);
+        if(tempValue > 0 && tempValue < 100){
+            _MAX_HUMIDITY = tempValue;
+            os_sprintf(str, "Set value %s = %d\r\n", "_MAX_HUMIDITY", _MAX_HUMIDITY);
+            uart0_send_str(str);
         }
     }
+
+    // Команда на установку гистерезиса
+    if(strcmp(topicBuf, SET_DELTA_HUM_TOPIC) == 0){
+        tempValue = atoi(dataBuf);
+        if(tempValue > 0 && tempValue < 100){
+            _DELTA_HAMIDITY = tempValue;
+            os_sprintf(str, "Set value %s = %d\r\n", "_DELTA_HAMIDITY", _DELTA_HAMIDITY);
+            uart0_send_str(str);
+        }
+    }
+
+    // Команда на включение/отключение принудительной работы вентилятора
+    if(strcmp(topicBuf, SET_MOTOR_ON_TOPIC) == 0){
+        if(strcmp(dataBuf, "on") == 0){
+            _MOTOR_ON = 1;
+            motorOn();
+            os_sprintf(str, "Set value %s = %d\r\n", "_MOTOR_ON", _MOTOR_ON);
+            uart0_send_str(str);
+        }
+
+        if(strcmp(dataBuf, "off") == 0){
+            _MOTOR_ON = 0;
+            motorOff();
+            os_sprintf(str, "Set value %s = %d\r\n", "_MOTOR_ON", _MOTOR_ON);            
+            uart0_send_str(str);
+        }
+    }
+
+
     os_free(topicBuf);
     os_free(dataBuf);
 }
@@ -194,6 +236,7 @@ void init_done_cb() {
 
     _MAX_HUMIDITY   = 90; // включение вентилятора при 90%
     _DELTA_HAMIDITY = 2;  // отключение вентилятора при 88% (90-2)
+    _MOTOR_ON       = 0;  // принудительное (безусловное) включение вентилятора 
 
     // Планировалось, что устройство будет внутри, но из-за плохой связи роли датчиков изменились
 
