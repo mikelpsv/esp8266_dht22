@@ -31,6 +31,7 @@
 #define DATA_TOPIC "cellar/device_id/%d"
 #define SET_MAX_HUM_TOPIC "cellar/device_id/max_hum"
 #define SET_DELTA_HUM_TOPIC "cellar/device_id/delta_hum"
+#define SET_MIN_TEMP_TOPIC "cellar/device_id/min_temp"
 #define SET_MOTOR_ON_TOPIC "cellar/device_id/motor_on"
 
 os_event_t user_procTaskQueue[USER_PROC_TASK_QUEUE_LEN];
@@ -42,7 +43,9 @@ char topic_str[20];
 
 int _MAX_HUMIDITY;      // влажность, при которой включится вентилятор
 int _DELTA_HAMIDITY;    // гистерезис для отключения вентилятора: _MAX_HUMIDITY - _DELTA_HAMIDITY
+int _MIN_TEMP;          // минимальная температура, ниже которой вентилятор не включится при любой влажности
 int _MOTOR_ON;          // принудительное включение вентилятора
+
 
 int motorIsOn;          // текущее состояние вентилятора
 uint32_t motorHours;    // счетчик мото-часов вентилятора
@@ -120,14 +123,22 @@ static void ICACHE_FLASH_ATTR read_DHT(void *arg){
         dht_sensors[SENSOR_INDEX_OUTDOOR].counter = 0;
 
         if(_MOTOR_ON == 0) {
-            // Включаем, при условии: вентилятор выключен, влажность внутри выше нормы и внешняя абсолютная влажность меньше чем внутри
-            if(motorOn == 0 && dht_sensors[SENSOR_INDEX_INDOOR].humidity > _MAX_HUMIDITY 
-                    && dht_sensors[SENSOR_INDEX_OUTDOOR].humidity_a <= dht_sensors[SENSOR_INDEX_INDOOR].humidity_a){
+            // Включаем, при условии: вентилятор выключен, 
+            // влажность внутри выше нормы и внешняя абсолютная влажность меньше чем внутри
+
+            if( (motorOn == 0) && (dht_sensors[SENSOR_INDEX_INDOOR].humidity > _MAX_HUMIDITY)
+                    && (dht_sensors[SENSOR_INDEX_OUTDOOR].humidity_a <= dht_sensors[SENSOR_INDEX_INDOOR].humidity_a)
+                    && (dht_sensors[SENSOR_INDEX_OUTDOOR].temperature > _MIN_TEMP) ) {
                 motorOn();
             }
 
-            // Выключаем, при условии: вентилятор включен, влажность опустилась ниже (нормы -гистерезис %)
-            if(motorIsOn == 1  && dht_sensors[SENSOR_INDEX_INDOOR].humidity <= (_MAX_HUMIDITY - _DELTA_HAMIDITY)){
+            // Выключаем, при условии: вентилятор включен, 
+            // влажность опустилась ниже (нормы минус гистерезис %) 
+            // или температура внутри ниже критической
+            if( (motorIsOn == 1)
+                && ( (dht_sensors[SENSOR_INDEX_INDOOR].humidity <= (_MAX_HUMIDITY - _DELTA_HAMIDITY))
+                    || (dht_sensors[SENSOR_INDEX_OUTDOOR].temperature <= _MIN_TEMP) ) ){
+
                 motorOff();
             }
         }else{
@@ -151,7 +162,7 @@ void ICACHE_FLASH_ATTR wifiConnectCb(uint8_t status){
 void ICACHE_FLASH_ATTR mqttConnectedCb(uint32_t *args) {
   
     MQTT_Client* client = (MQTT_Client*) args;
-    MQTT_Subscribe(client, "#", 0);
+    MQTT_Subscribe(client, "cellar/device_id/+", 0);
 }
 
 
@@ -199,6 +210,13 @@ void ICACHE_FLASH_ATTR mqttDataCb(uint32_t *args, const char* topic, uint32_t to
         }
     }
 
+    // Команда на установку минимальной температуры
+    if(strcmp(topicBuf, SET_MIN_TEMP_TOPIC) == 0){
+        _MIN_TEMP = atoi(dataBuf);
+        os_sprintf(str, "Set value %s = %d\r\n", "_MIN_TEMP", _MIN_TEMP);
+        uart0_send_str(str);
+    }    
+
     // Команда на включение/отключение принудительной работы вентилятора
     if(strcmp(topicBuf, SET_MOTOR_ON_TOPIC) == 0){
         if(strcmp(dataBuf, "on") == 0){
@@ -236,6 +254,7 @@ void init_done_cb() {
 
     _MAX_HUMIDITY   = 90; // включение вентилятора при 90%
     _DELTA_HAMIDITY = 2;  // отключение вентилятора при 88% (90-2)
+    _MIN_TEMP       = 1;  // минимальная температура, ниже которой вентилятор не включится при любой влажности
     _MOTOR_ON       = 0;  // принудительное (безусловное) включение вентилятора 
 
     // Планировалось, что устройство будет внутри, но из-за плохой связи роли датчиков изменились
